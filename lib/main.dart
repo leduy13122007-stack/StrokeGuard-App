@@ -9,6 +9,7 @@ import 'local_auth_service.dart';
 import 'demo_sensor_service.dart';
 import 'database/app_database.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -208,7 +209,7 @@ class PageHeader extends StatelessWidget {
             ],
           ),
         ),
-        ?trailing,
+        if (trailing != null) trailing!,
       ],
     );
   }
@@ -286,7 +287,7 @@ class _DashboardPageState extends State<DashboardPage> {
   @override
   void initState() {
     super.initState();
-    _sensor = DemoSensorService();
+    _sensor = DemoSensorService.instance;
     _sensor.addListener(_onSensorUpdate);
   }
 
@@ -296,9 +297,57 @@ class _DashboardPageState extends State<DashboardPage> {
 
   @override
   void dispose() {
+    // The sensor service is shared by Dashboard, Alerts and Reports.
+    // Individual pages remove only their own listener; they do not dispose it.
     _sensor.removeListener(_onSensorUpdate);
-    _sensor.dispose();
     super.dispose();
+  }
+
+  Future<void> _callEmergency115() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Call emergency services?'),
+        content: const Text(
+          'Open the phone dialer with Vietnam emergency ambulance number 115? '
+          'Only proceed if you need emergency assistance. Demo alerts are simulated.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            icon: const Icon(Icons.call_rounded),
+            label: const Text('Open dialer'),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFD32F2F),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    try {
+      final launched = await launchUrl(
+        Uri(scheme: 'tel', path: '115'),
+        mode: LaunchMode.externalApplication,
+      );
+      if (!launched && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Unable to open the phone dialer.')),
+        );
+      }
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Unable to open the phone dialer.')),
+      );
+      debugPrint('Failed to launch emergency dialer: $error');
+    }
   }
 
   String _timeLabel() {
@@ -509,6 +558,27 @@ class _DashboardPageState extends State<DashboardPage> {
             ),
           ),
           const SizedBox(height: 25),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: _callEmergency115,
+              icon: const Icon(Icons.call_rounded),
+              label: const Text('EMERGENCY CALL 115'),
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFFD32F2F),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                textStyle: const TextStyle(fontWeight: FontWeight.w800),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Opens your phone dialer. Not triggered by demo alerts.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 11, color: muted),
+          ),
+          const SizedBox(height: 24),
           const SectionTitle('Simulated sensor readings'),
           const SizedBox(height: 6),
           Text(
@@ -741,10 +811,24 @@ class _AlertsPageState extends State<AlertsPage> {
   bool isLoading = true;
   String selectedFilter = 'All';
 
+  late final DemoSensorService _sensor;
+
   @override
   void initState() {
     super.initState();
+    _sensor = DemoSensorService.instance;
+    _sensor.addListener(_onSensorUpdate);
     _loadAlerts();
+  }
+
+  void _onSensorUpdate() {
+    if (mounted) _loadAlerts();
+  }
+
+  @override
+  void dispose() {
+    _sensor.removeListener(_onSensorUpdate);
+    super.dispose();
   }
 
   Future<void> _loadAlerts() async {
@@ -1281,10 +1365,24 @@ class _ReportsPageState extends State<ReportsPage> {
   List<Map<String, dynamic>> measurements = [];
   bool isLoading = true;
 
+  late final DemoSensorService _sensor;
+
   @override
   void initState() {
     super.initState();
+    _sensor = DemoSensorService.instance;
+    _sensor.addListener(_onSensorUpdate);
     _loadMeasurements();
+  }
+
+  void _onSensorUpdate() {
+    if (mounted) _loadMeasurements();
+  }
+
+  @override
+  void dispose() {
+    _sensor.removeListener(_onSensorUpdate);
+    super.dispose();
   }
 
   Future<void> _loadMeasurements() async {
@@ -1505,10 +1603,18 @@ class FamilyPage extends StatefulWidget {
 }
 
 class _FamilyPageState extends State<FamilyPage> {
+  final TextEditingController _emailController =
+    TextEditingController();
   bool _sending = false;
 
+  @override
+  void dispose() {
+    _emailController.dispose();
+    super.dispose();
+  }
+
   Future<void> _sendInvitation() async {
-    final emailController = TextEditingController();
+    _emailController.clear();
     String relationship = 'Parent';
 
     final shouldSend = await showDialog<bool>(
@@ -1520,7 +1626,7 @@ class _FamilyPageState extends State<FamilyPage> {
             mainAxisSize: MainAxisSize.min,
             children: [
               TextField(
-                controller: emailController,
+                controller: _emailController,
                 keyboardType: TextInputType.emailAddress,
                 decoration: const InputDecoration(
                   labelText: 'Account email',
@@ -1557,7 +1663,7 @@ class _FamilyPageState extends State<FamilyPage> {
             FilledButton(
               onPressed: () => Navigator.pop(
                 dialogContext,
-                emailController.text.trim().isNotEmpty,
+                _emailController.text.trim().isNotEmpty,
               ),
               child: const Text('Send invitation'),
             ),
@@ -1566,8 +1672,7 @@ class _FamilyPageState extends State<FamilyPage> {
       ),
     );
 
-    final email = emailController.text.trim();
-    emailController.dispose();
+    final email = _emailController.text.trim();
     if (shouldSend != true || !mounted) return;
 
     setState(() => _sending = true);
