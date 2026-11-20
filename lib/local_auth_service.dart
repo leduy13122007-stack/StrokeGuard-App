@@ -1,68 +1,111 @@
-
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class LocalAuthService {
-  static const _emailKey = 'demo_email';
-  static const _passwordKey = 'demo_password';
-  static const _sessionKey = 'logged_in_email';
+  // Kept under the existing class name to avoid changing all callers.
+  // Authentication is now handled by Firebase, not local SharedPreferences.
 
-  // Đăng ký tài khoản thử nghiệm.
+  static final FirebaseAuth _auth = FirebaseAuth.instance;
+  static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+
   static Future<String?> register(
     String email,
-    String password,
-  ) async {
-    final prefs = await SharedPreferences.getInstance();
-
+    String password, {
+    String displayName = '',
+  }) async {
     final normalizedEmail = email.trim().toLowerCase();
 
     if (normalizedEmail.isEmpty || password.length < 6) {
       return 'Nhập email hợp lệ và mật khẩu ít nhất 6 ký tự.';
     }
 
-    final existingEmail = prefs.getString(_emailKey);
+    try {
+      final credential = await _auth.createUserWithEmailAndPassword(
+        email: normalizedEmail,
+        password: password,
+      );
+      final user = credential.user;
+      if (user == null) return 'Không thể tạo tài khoản. Vui lòng thử lại.';
 
-    if (existingEmail == normalizedEmail) {
-      return 'Email này đã được đăng ký trên thiết bị.';
+      final name = displayName.trim().isEmpty
+          ? normalizedEmail.split('@').first
+          : displayName.trim();
+
+      await user.updateDisplayName(name);
+      await _firestore.collection('users').doc(user.uid).set({
+        'uid': user.uid,
+        'email': normalizedEmail,
+        'emailLower': normalizedEmail,
+        'displayName': name,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+
+      return null;
+    } on FirebaseAuthException catch (e) {
+      return _authError(e);
+    } on FirebaseException catch (e) {
+      return e.message ?? 'Không thể lưu hồ sơ người dùng trên Firestore.';
+    } catch (_) {
+      return 'Không thể tạo tài khoản. Vui lòng thử lại.';
     }
-
-    await prefs.setString(_emailKey, normalizedEmail);
-    await prefs.setString(_passwordKey, password);
-
-    return null;
   }
 
-  // Đăng nhập.
-  static Future<String?> login(
-    String email,
-    String password,
-  ) async {
-    final prefs = await SharedPreferences.getInstance();
-
-    final savedEmail = prefs.getString(_emailKey);
-    final savedPassword = prefs.getString(_passwordKey);
-
-    if (email.trim().toLowerCase() != savedEmail ||
-        password != savedPassword) {
-      return 'Email hoặc mật khẩu không chính xác.';
+  static Future<String?> login(String email, String password) async {
+    try {
+      final credential = await _auth.signInWithEmailAndPassword(
+        email: email.trim().toLowerCase(),
+        password: password,
+      );
+      final user = credential.user;
+      if (user != null) {
+        final profile = _firestore.collection('users').doc(user.uid);
+        final snapshot = await profile.get();
+        if (!snapshot.exists) {
+          final normalizedEmail = user.email ?? email.trim().toLowerCase();
+          await profile.set({
+            'uid': user.uid,
+            'email': normalizedEmail,
+            'emailLower': normalizedEmail,
+            'displayName': user.displayName ??
+                normalizedEmail.split('@').first,
+            'createdAt': FieldValue.serverTimestamp(),
+          });
+        }
+      }
+      return null;
+    } on FirebaseAuthException catch (e) {
+      return _authError(e);
+    } on FirebaseException catch (e) {
+      return e.message ?? 'Không thể tải hồ sơ người dùng.';
+    } catch (_) {
+      return 'Đăng nhập không thành công. Vui lòng thử lại.';
     }
-
-    await prefs.setString(
-      _sessionKey,
-      email.trim().toLowerCase(),
-    );
-
-    return null;
   }
 
-  // Lấy email của phiên đăng nhập hiện tại.
-  static Future<String?> currentUser() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_sessionKey);
+  static String _authError(FirebaseAuthException error) {
+    switch (error.code) {
+      case 'email-already-in-use':
+        return 'Email này đã được đăng ký. Hãy đăng nhập.';
+      case 'invalid-email':
+        return 'Địa chỉ email không hợp lệ.';
+      case 'weak-password':
+        return 'Mật khẩu cần có ít nhất 6 ký tự.';
+      case 'user-not-found':
+      case 'wrong-password':
+      case 'invalid-credential':
+        return 'Email hoặc mật khẩu không chính xác.';
+      case 'too-many-requests':
+        return 'Bạn đã thử quá nhiều lần. Vui lòng thử lại sau.';
+      case 'network-request-failed':
+        return 'Không có kết nối mạng. Vui lòng thử lại.';
+      default:
+        return error.message ?? 'Xác thực thất bại. Vui lòng thử lại.';
+    }
   }
 
-  // Đăng xuất.
+  static Future<String?> currentUser() async => _auth.currentUser?.email;
+
   static Future<void> logout() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_sessionKey);
+    await _auth.signOut();
   }
 }

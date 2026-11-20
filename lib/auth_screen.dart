@@ -20,6 +20,7 @@ class AuthScreen extends StatefulWidget {
 class _AuthScreenState extends State<AuthScreen> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
+  final _nameController = TextEditingController();
   final _passwordController = TextEditingController();
 
   bool _isRegister = false;
@@ -29,6 +30,7 @@ class _AuthScreenState extends State<AuthScreen> {
   @override
   void dispose() {
     _emailController.dispose();
+    _nameController.dispose();
     _passwordController.dispose();
     super.dispose();
   }
@@ -45,6 +47,7 @@ class _AuthScreenState extends State<AuthScreen> {
         error = await LocalAuthService.register(
           _emailController.text,
           _passwordController.text,
+          displayName: _nameController.text,
         );
 
         if (error == null) {
@@ -108,12 +111,32 @@ class _AuthScreenState extends State<AuthScreen> {
                   const SizedBox(height: 8),
                   Text(
                     _isRegister
-                        ? 'Create your demo account'
+                        ? 'Create your StrokeGuard account'
                         : 'Sign in to your account',
                     textAlign: TextAlign.center,
                     style: const TextStyle(color: Colors.blueGrey),
                   ),
                   const SizedBox(height: 32),
+                  if (_isRegister) ...[
+                    TextFormField(
+                      controller: _nameController,
+                      textCapitalization: TextCapitalization.words,
+                      decoration: const InputDecoration(
+                        labelText: 'Full name',
+                        prefixIcon: Icon(Icons.person_outline),
+                        border: OutlineInputBorder(),
+                        filled: true,
+                        fillColor: Colors.white,
+                      ),
+                      validator: (value) {
+                        if (_isRegister && (value ?? '').trim().isEmpty) {
+                          return 'Enter your full name';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                  ],
                   TextFormField(
                     controller: _emailController,
                     keyboardType: TextInputType.emailAddress,
@@ -197,7 +220,7 @@ class _AuthScreenState extends State<AuthScreen> {
                   ),
                   const SizedBox(height: 12),
                   const Text(
-                    'LOCAL DEMO ACCOUNT • NOT FOR MEDICAL USE',
+                    'SECURE ACCOUNT • FIREBASE AUTHENTICATION',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 10,

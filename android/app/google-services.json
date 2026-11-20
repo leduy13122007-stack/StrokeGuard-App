@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "745144044899",
+    "project_id": "strokeguard-abecf",
+    "storage_bucket": "strokeguard-abecf.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:745144044899:android:9f79ed4fc5fc03e6719756",
+        "android_client_info": {
+          "package_name": "com.example.strokeguard_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBW9pSm1ALtzLPOUgRvXpUYZc_xCb4R1Kc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
